@@ -176,7 +176,7 @@ Veamos cuáles son los valores esperados por el modelo para River y los finalmen
 ```
 
 
-#Transformación de variables
+# Transformación de variables
 Si bien las escalas de las variables no difieren mucho probamos ahora el mismo modelo pero con las variables en escala logaritmica para estandarizarlas.
 
 ```{r}
@@ -238,7 +238,7 @@ El nuevo modelo tiene un mayor poder explicativo menor que los anteriores (59%),
 http://www.rpubs.com/gabymill/556908
 
 
-#Intervalo de confianza
+# Intervalos de confianza
 
 Construimos los intervalos de confianza para los parámetros obtenidos en el modelo_step
 
@@ -277,7 +277,7 @@ confint(modelo_step)
 ```
 
 
-#Test de hipótesis vía simulación
+# Test de hipótesis vía simulación
 
 El objetivo principal es ver si el modelo elegido performa mejor que uno solo con la media, es decir si el modelo predice mejor que el ruido mismo. Vemos si los estimadores son estadísticamente significativos a partir de la técnica de bootstrapping.
 

@@ -3,9 +3,9 @@ title: "Superliga - Modelo Estadístico"
 author: "Martin Alalu"
 date: "9/22/2019"
 output:
-  pdf_document: default
   html_document: 
     df_print: paged
+  pdf_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -17,7 +17,7 @@ library(tidyverse)
 library(janitor)
 library(ggpubr)
 
-futbol <- read.csv("D:/estadistica-computacional/data/datos_2015.csv", encoding = 'Latin-1', sep=";")
+futbol <- read.csv("https://raw.githubusercontent.com/martoalalu/superliga-modelo/master/data/datos_2015.csv", encoding = 'UTF-8', sep=";")
 futbol <- clean_names(futbol)
 ```
 ## Análisis Exploratorio
@@ -278,9 +278,113 @@ confint(modelo_step)
 
 
 #Test de hipótesis vía simulación
-```{r}
-hip_nula <- modelo_step$residuals + modelo_step$coefficients[1]
 
-  y_sin_x<-modelo_step$residuals + modelo_step$coefficients[1]
+El objetivo principal es ver si el modelo elegido performa mejor que uno solo con la media, es decir si el modelo predice mejor que el ruido mismo. Vemos si los estimadores son estadísticamente significativos a partir de la técnica de bootstrapping.
+
+```{r}
+#Defino los 2 modelos, uno con la VD y todas las VI y otro solo con la VD
+
+datreg_M1 <- select(futbol, pts, pts_2014, inversion_abs, inversion_relativa, valor, ascenso)
+datreg_M0 <- select(futbol, pts)
+
+# Modelos
+
+# Mi modelo: M1
+fit_M1 <- lm(pts ~ ., data = datreg_M1)
+# El modelo M0 (anidado dentro de M1)
+fit_M0 <- lm(pts ~ ., data = datreg_M0)
+
+summary(fit_M0)
+
+
+# Extraigo los errores
+residuos_M1 <- fit_M1$residuals
+residuos_M0 <- fit_M0$residuals
+
+
+
+# Extraigo la prediccion del modelo nulo M0, la cual voy a usar para generar un data set sintético
+#Esta es la predicción basandonos en la media nada mas
+B0 = fit_M0$fitted.values
+
+
+
+# Calculo el valor del test F observado
+
+## Calculo la suma de los errores al cuadrado (desviación respecto a la media) del modelo de interés (M1, quien contiene al otro modelo) y M0 contine solo el intercept
+RSS_M1 <- sum(residuos_M1 ^ 2)
+RSS_M0 <- sum(residuos_M0 ^ 2)
+
+## Calculo los grados de libertad
+p_M0 <- fit_M0$rank
+p_M1 <- fit_M1$rank
+N = nrow(datreg_M1)
+
+## Calculo el numerador y el denominador
+numerador = (RSS_M0 - RSS_M1) / (p_M1 - p_M0)
+denominador = RSS_M1 / (N - p_M1)
+
+## Calculo F
+F_obs <- numerador / denominador
+F_obs
+
+
+
+# Función para test F mediante boostrap semiparamétrico
+#
+# In:
+#    * datreg_M0: datos del modelo M0, supone que 'y' es var_dependiente
+#    * datreg_M1: datos del modelo M1, supone que 'y' es var_dependiente
+#    * B0: prediccion del modelo M0
+#    * residuos_M1: residuos del modelo M1
+#
+# Out:
+#    * Estadístico del test F bajo el supuesto de la hipótesis nula
+#
+
+reg <- function(datreg_M0, datreg_M1, B0, residuos_M1) {
+  # índice para hacer el boostrap
+  N <- nrow(datreg_M1)
+  boot_i <- sample.int(N, N, replace = T)
+  
+  # y sintético (recuerden que R copia lo que ingresa a la func)
+  residuos_2_boot <- residuos_M1[boot_i]
+  datreg_M0$y <-  residuos_2_boot + B0
+  datreg_M1$y <-  residuos_2_boot + B0
+  
+  # M1 con los y's sintéticos
+  boot_fit_M0 =  lm(y ~ ., data = datreg_M0)
+  boot_fit_M1 =  lm(y ~ ., data = datreg_M1)
+  
+  # Residuos
+  boot_residuos_M0 <- boot_fit_M0$residuals
+  boot_residuos_M1 <- boot_fit_M1$residuals
+  
+  # Suma residuos al cuadrado
+  RSS_M0 <- sum(boot_residuos_M0 ^ 2)
+  RSS_M1 <- sum(boot_residuos_M1 ^ 2)
+  
+  # F simulacion boot
+  p_M0 <- boot_fit_M0$rank
+  p_M1 <- boot_fit_M1$rank
+  numerador = (RSS_M0 - RSS_M1) / (p_M1 - p_M0)
+  denominador = RSS_M1 / (N - p_M1)
+  F_boot <- numerador / denominador
+  
+  # Devuelve F_boot
+  return(F_boot)
+}
+
+
+boot <-
+  t(replicate(2000, reg(datreg_M0, datreg_M1, B0, residuos_M1)))
+
+
+# Que tan probable es?
+mean(F_obs < boot)
+(mean(F_obs < boot)) < .05
+
+hist(boot,xlim = c(0,35))
+abline(v=F_obs,col="red",lwd=3)
 ```
 

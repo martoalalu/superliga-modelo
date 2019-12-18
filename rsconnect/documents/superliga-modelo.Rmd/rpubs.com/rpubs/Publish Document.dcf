@@ -1,0 +1,10 @@
+name: Publish Document
+title:
+username:
+account: rpubs
+server: rpubs.com
+hostUrl: rpubs.com
+appId: https://api.rpubs.com/api/v1/document/561219/b4e97410a4ec41feb133110b6b3cd8c9
+bundleId: https://api.rpubs.com/api/v1/document/561219/b4e97410a4ec41feb133110b6b3cd8c9
+url: http://rpubs.com/martinalalu/561219
+when: 1576691933.4248

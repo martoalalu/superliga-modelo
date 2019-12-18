@@ -329,19 +329,6 @@ F_obs <- numerador / denominador
 F_obs
 
 
-
-# Función para test F mediante boostrap semiparamétrico
-#
-# In:
-#    * datreg_M0: datos del modelo M0, supone que 'y' es var_dependiente
-#    * datreg_M1: datos del modelo M1, supone que 'y' es var_dependiente
-#    * B0: prediccion del modelo M0
-#    * residuos_M1: residuos del modelo M1
-#
-# Out:
-#    * Estadístico del test F bajo el supuesto de la hipótesis nula
-#
-
 reg <- function(datreg_M0, datreg_M1, B0, residuos_M1) {
   # índice para hacer el boostrap
   N <- nrow(datreg_M1)
@@ -384,7 +371,9 @@ boot <-
 mean(F_obs < boot)
 (mean(F_obs < boot)) < .05
 
+
 hist(boot,xlim = c(0,35))
 abline(v=F_obs,col="red",lwd=3)
 ```
 
+A partir de esto es posible rechazar la hipótesis nula y por ende seguir afirmar que el modelo construido es estadísticamente significativo. Es decir que el modelo que incluye a pts_2014, inversión absoluta, relativa, valor del equipo y el hecho de haber ascendido predice mejor que la media, o bien que los pts obtenidos en el torneo de Superliga 2015 no se explican por el error o ruido en este caso.

@@ -1,0 +1,286 @@
+---
+title: "Superliga - Modelo Estadístico"
+author: "Martin Alalu"
+date: "9/22/2019"
+output:
+  pdf_document: default
+  html_document: 
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message=FALSE)
+```
+
+```{r}
+library(tidyverse)
+library(janitor)
+library(ggpubr)
+
+futbol <- read.csv("D:/estadistica-computacional/data/datos_2015.csv", encoding = 'Latin-1', sep=";")
+futbol <- clean_names(futbol)
+```
+## Análisis Exploratorio
+
+El dataframe tiene 49 variables y 30 observaciones, correspondientes a los equipos que jugaron la Superliga de fútbol durante el año 2015.
+De los datos se puede observar que el campeón al cabo de 30 fechas obtuvo 64 puntos, mientras que el último 14. La valoración máxima de un plantel fue de 43.4M de euros mientras que la mínima de 3.38M. El equipo que más invirtió lo hizo por un monto de 11.2M, y el que menos invirtó en realidad vendió más de lo que compró al inicio de la temporada, por un valor total de 2.9M. En términos relativos hubo un equipo que multiplicó por 1.08 la inversión realizada para el campeonato anterior mientras que hubo un equipo cuya inversión retrocedió UN 22% para esta temporada.
+
+Durante esta temporada 7 equipos participaron de la Copa Sudamericana, mientras que 6 para la Libertadores y 2 equipos jugaron ambas competiciones continentales. Un total de 10 equipos ascendieron de la B Nacional para jugar la temporada 2015.
+```{r}
+futbol
+```
+
+Para empezar vemos cuál es la correlación entre las principales variables. Sabemos que correlación no es causalidad pero nos ayudará a ir guiando la exploración.
+```{r}
+cor_matrix <- cor(select(futbol, pts_2012_13,pts_2013_14,pts_2014, inversion_abs, inversion_relativa,valor,pos, pts,sudamericana, ascenso,libertadores), method = c("pearson", "kendall", "spearman"))
+
+col<- colorRampPalette(c("red", "white", "blue"))(20)
+heatmap(x = cor_matrix, col = col, symm = TRUE)
+```
+
+Cómo era esperable hay una fuerte correlación entre los puntos obtenidos sucesivamente en los últimos 3 torneos. Se destaca la correlación entre las variables valor y puntos obtenidos en el presente torneo (0.61), e inversamente entre los puntos y el hecho de haber ascendido (o sea que haber ascendido impacta negativamente en la cantidad de puntos obtenidos al final del torneo), y por último entre valor e inversión absoluta (0.57); es decir que los equipos de mayor valor de mercado y quienes más invirtieron en términos absolutos solieron tener más puntos, y por ende estar mejor posicionados. Un poco más rezagada se encuentra la correlación entre puntos e inversión relativa (es decir medida en variación respecto al año anterior), con 0.43.
+
+```{r}
+modelo_pts_valor <- lm(pts ~ valor, data = futbol)
+modelo_pts_invabs <- lm(pts ~ inversion_abs, data = futbol)
+modelo_pts_invrel <- lm(pts ~ inversion_relativa, data = futbol)
+
+modelo_pts_valor
+modelo_pts_invabs
+modelo_pts_invrel
+
+
+ggpubr::ggarrange(ncol=2, nrow=2,
+                  ggplot(data = futbol) + 
+                    geom_point(aes(x = valor, y = pts)) +
+                    labs(title = "Valor del equipo y puntos",
+                         subtitle = "Superliga 2015",
+                         y = "Puntos",
+                         x= "Valor del equipo",
+                         caption = "con línea de regresión") +
+                    geom_abline(aes(intercept = 29.6578, slope = 0.7111), color = "blue")+
+                    geom_smooth(aes(x = valor, y = pts), method = "lm"),
+                  
+                  ggplot(data = futbol) + 
+                    geom_point(aes(x = inversion_abs, y = pts)) +
+                    labs(title = "Inversión absoluta y puntos",
+                         subtitle = "Superliga 2015",
+                         y = "Puntos",
+                         x= "Inversión absoluta",
+                         caption = "con línea de regresión") +
+                    geom_abline(aes(intercept = 36.142, slope = 1.744), color = "blue")+
+                    geom_smooth(aes(x = inversion_abs, y = pts), method = "lm"),
+                  
+                  ggplot(data = futbol) + 
+                    geom_point(aes(x = inversion_relativa, y = pts)) +
+                    labs(title = "Inversión relativa y puntos",
+                         subtitle = "Superliga 2015",
+                         y = "Puntos",
+                         x= "Inversión relativa",
+                         caption = "con línea de regresión") +
+                    geom_abline(aes(intercept = 36.83, slope = 20.35), color = "blue")+
+                    geom_smooth(aes(x = inversion_relativa, y = pts), method = "lm")
+)
+
+summary(modelo_pts_valor)
+summary(modelo_pts_invabs)
+summary(modelo_pts_invrel)
+
+```
+
+Estos 3 modelos son excesivamente simples, en el sentido de que sólo consideran el efecto de una sola variable independiente por separado (valor del plantel, inversión absoluta y relativa) en la dependiente (pts), sin tener en cuenta el resto (que en este caso serían parte de los errores de estimación).
+
+El primero intenta explicar la variación de los puntos obtenidos a partir del valor del plantel, y se los resultados podemos obtenemos que el incremento de un millón de euros en el valor del plantel trae aparejado un incremento de 0.7 puntos al final del torneo. Este hallazgo es estadísticamente significativo y permite explicar el 35% de la varianza de los puntos.
+
+El segundo modelo sólo considera la inversión absoluta como variable independiente, la cual explica también el 25% de la varianza de los puntos y es estadísticamente significativa. Ante el incremento de un millón de euros en la inversión respecto del año pasado se esperaría un incremento de 1.7 puntos al final de la temporada.
+
+Por último el modelo que sólo utiliza la inversión relativa al año anterior. Ante un incremento de un 10% de la inversión respecto de la temporada anterior se esperaría un incremento de 2 puntos botenidos al final del torneo. Este hallazgo es estadísticamente significativo pero sólo explica un 16% de la varianza de puntos.
+
+Analizamos ahora con un modelo más complejo, que tenga en cuenta todas las variables disponibles y así veremos si ganamos o no en poder explicativo.
+
+```{r}
+#Modelo
+modelo_pts <- lm(pts ~ pts_2012_13 + pts_2013_14 + pts_2014 + inversion_abs + 
+                  inversion_relativa + valor + libertadores + sudamericana + ascenso, 
+                  data = futbol)
+
+summary(modelo_pts)
+```
+
+En primer lugar las variables independientes seleccionadas (puntos en las 3 temporadas anteriores, inversión absoluta y relativa, el valor del equipo, el hecho de haber jugado la Copa Libertadores o la Copa Sudamericana y haber ascendido) explican en 56% la variación en los puntos. Hay 3 variables independientes cuyo estimador es estadísticamente significativo en un 95%, los puntos obtenidos en la temporada anterior (2014), la inversión relativa y el valor del equipo. En el primer caso por cada punto obtenido en el torneo 2014 conlleva un incremento de 0.57 puntos en los puntos obtenidos durante el torneo 2015; duplicar la inversión relativa implica un incremento de 40 puntos (cabe destacar que sólo un equipo hizo tal incremento, Rosario Central, cuya inversión relativa fue de 1.08), o bien incrementar un 10% la inversión implica un incremento de 4 puntos; por último por cada incremento de un millón de euros en el valor del equipo implica un incremento de 0.83 puntos. Estos efectos señalados se dan manteniendo constantes el resto de las variables independientes del modelo. En este modelo participar o no de la Copa Libertadores o Copa Sudamericana, o bien haber ascendido no tiene ningún impacto estadísticamente significativo sobre los puntos obtenidos, algo que va en contra de la intuición futbolera (los equipos que juegan copas le dan prioridad a ellas por ser torneos más prestigiosos y se ven obligados a usar equipos alternativos en el torneo local y los equipos que ascienden tienen menos recursos y menos experiencia en primera, por ende corren con desventaja frente al resto).
+
+
+# Diagnóstico del modelo
+En primer lugar vemos cómo se distribuyen los residuos
+
+```{r}
+residuos1 <- residuals(modelo_pts)
+
+# Agrego la columna de con los residuos al data frame y los visualizamos
+
+futbol <- futbol %>% mutate(residuo_ml = residuos1)
+
+ggplot(futbol) +
+    geom_point(aes(x = pts, y = residuo_ml)) +
+    geom_hline(yintercept = 0, col = "blue") +
+    labs(x = "Pts", y = "Residuo regresión lin. aplicada")
+
+hist(futbol$residuo_ml)
+```
+
+El primer gráfico muestra la distribución de los residuos a lo largo de las observaciones. A simple vista no hay ningún patrón claro, sino que se parecerían estar distribuidos aleatoriamente. Mientras que en el segundo se ve que los mismos tienen una distribución normal, algo que resulta positivo también.
+
+```{r}
+par(mfrow=c(2,2)) # Change the panel layout to 2 x 2
+plot(modelo_pts)
+par(mfrow=c(1,1))
+```
+
+El primer gráfico (Residuals vs Fitted) muestra si los residuos tienen patrones no lineales. En este caso es posible descartar la no-linealidad de los residuos del modelo, es decir que los mismos se pareceb distribuirse aleatoriamente, sin presentar patrón alguno. El segundo gráfico muestra que los residuos tienen una distribución normal, algo que nuevamente es positivo. El tercero muestra la distribución de los residuos a lo largo de los rangos de los predictores, de modo tal de chequear la asunción de homocedasticidad (igual varianza de los residuos en función de X). En este caso la homocedasticidad se cumple al estar los residuos distribuidos aleatoriamente, una vez más. El último gráfico permite encontrar casos que están influenciando en el modelo de sobremanera, de modo tal que alteran los resultados del mismo (empujandolo para arriba o para abajo). Nuevamente, ningún caso tiene un valor elevado en términos de la distancia de Cook, por lo que no hay casos extremos que estén influenciando en el modelo y por ende alteren los resultados.
+
+Ahora bien, con la función step podemos ir evaluando distintos modelos sustrayendo variables y ver cuál es el que mejor poder explicativo tiene.
+
+```{r}
+step(modelo_pts)
+
+modelo_step <- lm(pts ~ pts_2014 + inversion_abs + inversion_relativa + 
+    valor + ascenso, data = futbol)
+
+summary(modelo_step)
+
+residuos_step <- residuals(modelo_step)
+
+# Agrego la columna de con los residuos al data frame y los visualizamos
+
+futbol <- futbol %>% mutate(residuo_step = residuos_step)
+
+ggplot(futbol) +
+    geom_point(aes(x = pts, y = residuos_step)) +
+    geom_hline(yintercept = 0, col = "blue") +
+    labs(x = "Pts", y = "Residuo regresión lin. aplicada")
+
+hist(futbol$residuo_step)
+
+par(mfrow=c(2,2)) # Change the panel layout to 2 x 2
+plot(modelo_step)
+par(mfrow=c(1,1))
+
+```
+
+El modelo seleccionado es el que tiene como variables independientes a los puntos obtenidos en 2014, la inversión absoluta, la inversión relativa, el valor del equipo al inicio de la temporada y el hecho de haber ascendido o no en el último torneo. Este tiene un poder explicativo más alto que los anteriores, llegando al 61%.
+Por cada incremento en una unidad de los puntos obtenidos en el torneo anterior (2014) se esperaría un incremento de 0.4 puntos en el actual torneo; por cada incremento de un 10% en la inversión relativa se esperaría un incremento de 4.3 puntos; mientras que por cada incremento de un millón de euroes en el valor del equipo se esperaría un incremento de 0.9 puntos. Al igual que en elr esto de los modelos la distribución de los errores parece tener una distribución aleatoria y normal. Lo único que se observa es la observación 19 correspondiente a River Plate, el cual en términos de distancia de Cook esta ligeramente fuera del rango, por lo que podría ser considerado un outlier.
+Veamos cuáles son los valores esperados por el modelo para River y los finalmente obtenidos
+
+```{r}
+
+```
+
+
+#Transformación de variables
+Si bien las escalas de las variables no difieren mucho probamos ahora el mismo modelo pero con las variables en escala logaritmica para estandarizarlas.
+
+```{r}
+
+futbol <- futbol %>% 
+  mutate(log_pts = log(pts),
+         inversion_abs_log=log(inversion_abs),
+         inversion_relativa_log=log(inversion_relativa),
+         valor_log=log(valor),
+         ascenso_log=log(ascenso),
+         pts_2014_log=log(pts_2014))
+
+futbol$inversion_abs_log
+```
+
+Al revisar los nuevos valores vemos que al aplicar la escala logaritmica en la variable "inversión_absoluta" tenemos NaN y "- infinito" por lo que no podremos correr el nuevo modelo.
+Probamos usar otro método para estandarizarlas centrado en la media.
+
+```{r}
+library(robustHD)
+
+futbol <- futbol %>% 
+  mutate(pts_std = standardize(pts),
+         inversion_abs_std=standardize(inversion_abs),
+         inversion_relativa_std=standardize(inversion_relativa),
+         valor_std=standardize(valor),
+         ascenso_std=standardize(ascenso),
+         pts_2014_std=standardize(pts_2014))
+
+modelo_std <- lm(pts_std ~ pts_2014_std + inversion_abs_std + inversion_relativa_std + 
+    valor_std + ascenso_std, data = futbol)
+
+summary(modelo_std)
+```
+
+Al ver los datos vemos que el poder explicativo se mantiene en el 61%, por lo que al momento nos quedamos con el modelo anteriorimente descripto. Lo que sí podemos extraer a partir de este análisis es una medida de la importancia de las variables (ya que ahora están estandarizadas), así es posible afirmar que la inversión relativa es la variable independiente de mayor peso en el modelo, seguida por el valor del equipo y luego los puntos obtenidos en el torneo anterior (2014).
+
+Mantiendo el modelo_step vamos a agregar una nueva variable que mide la eficiencia en la inversión en el torneo pasado para capturar en qué medida una buena inversión en el torneo 2014 impacta o no positivamente en la performance del torneo 2015. Es esperable que el rendimiento de un equipo no sea inmediato sino que tenga cierto lag, esta variable intenta capturar esta maduración esperable de un equipo.
+
+```{r}
+futbol <- futbol %>% 
+  mutate(valor_2014=valor-inversion_abs)
+
+futbol <- futbol %>% 
+  mutate(eficiencia_2014=valor_2014 / pts_2014)
+
+futbol$eficiencia_2014[!is.finite(futbol$eficiencia_2014)]<- 0
+
+modelo_step_2 <- lm(pts ~ pts_2014 + inversion_abs + 
+                   inversion_relativa + valor + ascenso + eficiencia_2014, 
+                 data = futbol)
+
+summary(modelo_step_2)
+```
+
+El nuevo modelo tiene un mayor poder explicativo menor que los anteriores (59%), por lo que lo descartamos.
+
+
+http://www.rpubs.com/gabymill/556908
+
+
+#Intervalo de confianza
+
+Construimos los intervalos de confianza para los parámetros obtenidos en el modelo_step
+
+```{r}
+reg <- function(X,Y){
+  boot <- sample.int(nrow(futbol),nrow(futbol),replace=T)
+  boot_fit = lm(pts ~ pts_2014 + inversion_abs + inversion_relativa + 
+                  valor + ascenso,data=futbol[boot,])
+  return(coef(boot_fit))
+}
+
+boot <- t(replicate(10000,reg(X,Y)))
+head(boot)
+
+par(mfrow=c(3,2))
+hist(boot[,1])
+hist(boot[,2])
+hist(boot[,3])
+hist(boot[,4])
+hist(boot[,5])
+hist(boot[,6])
+
+quantile(boot[,1],p=c(.025,.25,.5,.75,.975))
+quantile(boot[,2],p=c(.025,.25,.5,.75,.975))
+quantile(boot[,3],p=c(.025,.25,.5,.75,.975))
+quantile(boot[,4],p=c(.025,.25,.5,.75,.975))
+quantile(boot[,5],p=c(.025,.25,.5,.75,.975))
+quantile(boot[,6],p=c(.025,.25,.5,.75,.975))
+```
+
+Los intervalos de confianza reflejan lo hallado anteriormente. Que con un 97,5% de certeza podemos decir que los estimadores encontrados para las variables pts_2014, inversion_relativa y valor son estadísticamente significativos, o bien que apenas hay un 2,5% de probabildiad de que el parámetro obtenido no sea estadísticamente significativo.
+
+```{r}
+#Si hacemos confint del modelo dan distintos valores! ¿Es porque los otros están bootsrapeados?
+confint(modelo_step)
+```
+
+
+#Test de hipótesis vía simulación
+```{r}
+hip_nula <- modelo_step$residuals + modelo_step$coefficients[1]
+
+  y_sin_x<-modelo_step$residuals + modelo_step$coefficients[1]
+```
+
